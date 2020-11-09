@@ -8,24 +8,28 @@ import bayes_model
 
 class Analyzer(object):
 
-    def __init__(self,model,test_path):
+    def __init__(self,model,test_path,metric='tf'):
         self.model=model
         self.test_path=test_path
         self.scan=None
-        self.test_data = self.make_dataframe()
+        self.test_data = self.make_dataframe(metric)
 
 
-    def make_dataframe(self):
+    def make_dataframe(self,metric):
         test_df=pd.read_csv(self.test_path,names=['x','y'])
 
         test_data=preprocessor.Preprocessor(test_df,self.model.vocab)
         test_data.tokenize('x')
         test_data.add_tags('x')
         test_data.lemmatize('x')
+        if metric =='tf':
+            test_data.update_dataframe('x','y')
+        elif metric =='tfidf':
+            test_data.update_dataframe_tfidf('x','y')
 
-        test_data.update_dataframe('x','y')
+        test_data.data['likelihood_pos']=(self.model.predict(test_data.data))
 
-        test_data.data['pos_score'],test_data.data['neg_score'],test_data.data['likelihood_pos']=(self.model.predict(test_data.data))
+        test_data.data['over_50']=test_data.data['likelihood_pos']>0.5
         return test_data.data
     def threshold_scan(self,thresholds,output_path):
         metrics=pd.DataFrame()
@@ -87,7 +91,7 @@ class Analyzer(object):
 
         
         metrics.columns=['threshold','tp','tn','fp','fn','accuracy','precision','recall','specificity','harmonic_mean']
-        metrics.to_csv(output_path)
+        metrics.to_csv(output_path+"threshold_scan.csv")
         self.threshold_scan=metrics
         return
 
@@ -117,7 +121,7 @@ class Analyzer(object):
     def print_confusion_matrix(self,threshold=0.5,output_path=None):
 
         #confusion matrix plot borrowed from "https://vitalflux.com/python-draw-confusion-matrix-matplotlib/"
-        print(self.test_data)
+        
         conf_matrix=confusion_matrix(self.test_data['y'],self.test_data['likelihood_pos'].apply(lambda x: x>=threshold))
         fig, ax = plt.subplots(figsize=(7.5, 7.5))
         ax.matshow(conf_matrix, cmap=plt.cm.Blues, alpha=0.3)

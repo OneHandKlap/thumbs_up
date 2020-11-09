@@ -13,7 +13,8 @@ import re
 from nltk import FreqDist
 import string
 from sklearn.metrics import confusion_matrix
-import model_analyzer
+import os
+from time import time
 
 
 #purpose of this module is to make it straightforward and simple to conduct preprocessing for NLP projects
@@ -29,6 +30,8 @@ class Preprocessor(object):
     def tokenize(self,column):
         tokenizer = RegexpTokenizer('\w+')
         self.data[column]=(self.data[column].apply(tokenizer.tokenize))
+
+    
     
     #lemmatization refers to the reformatting of tokenized words
     #ie. removing 'stop words', punctuation, numbers etc.
@@ -56,9 +59,41 @@ class Preprocessor(object):
         
         self.data[column]=self.data[column].apply(lemmatize_tokens)
 
-    #this function adds identifiers to individual words which indicates their 'part of speech'
-    def add_tags(self,column):
-        self.data[column]=self.data[column].apply(pos_tag)
+    def lemmatize_tokens(self,tokens):
+        stop_words=stopwords.words('english')
+        stop_words.append('br')
+        lemmatizer=WordNetLemmatizer()
+        output=[]
+
+        for word, tag in tokens:
+            word = re.sub('http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+#]|[!*\(\),]|'\
+                        '(?:%[0-9a-fA-F][0-9a-fA-F]))+','', word)
+            word = re.sub("(@[A-Za-z0-9_]+)","", word)
+            word = re.sub("[0-9]+","",word)
+            if tag.startswith('NN'):
+                pos='n'
+            elif tag.startswith('VB'):
+                pos='v'
+            else:
+                pos='a'
+            if word.lower() not in stop_words and word not in string.punctuation:
+                output.append(lemmatizer.lemmatize(word.lower(),pos))
+        return output
+
+
+    def preprocess(self,column):
+        tokenizer = RegexpTokenizer('\w+')
+        acc=[]
+        for x in range(len(self.data[column])):
+            
+            x=tokenizer.tokenize(self.data[column][x])
+            x=list(pos_tag(x))
+            
+            x=self.lemmatize_tokens(x)
+            acc.append(x)
+        self.data[column]=pd.Series(acc)
+
+
 
     #takes an integer to determine the number of words we want to use per text in order to contribute to our overall vocabulary
     def create_vocabulary(self, column, num_words_per_text):
@@ -76,49 +111,24 @@ class Preprocessor(object):
 
     ##TODO CREATE NEW VOCAB FUNCTION##
 
-    def create_vocabulary2(self,column,vocab_length):
+    def create_vocabulary2(self,column):
         vocabulary=[]
         for text in self.data[column]:
             vocabulary= vocabulary+text
-        freq_dist_vocab=FreqDist(vocabulary)
+        freq_dist_vocab=FreqDist(vocabulary).most_common()
 
-
-        self.vocabulary=[i[0] for i in freq_dist_vocab.most_common(vocab_length)]
-        
-    #returns the n words with highest TFIDF scores
-    def tfidf(self,n):
-        collection_of_texts=self.data['x']
-        freq_dist_collection=[]
-        total_docs=len(collection_of_texts)
-        def docs_with_word(word,collection_of_texts):
-            result=0
-            for text in collection_of_texts:
-                if word in text:
-                    result+=1
-            if result==0:
-                return 1
+        vocab_acc=[]
+        for i in range(len(freq_dist_vocab)):
+            #print(freq_dist_vocab)
+            #print(freq_dist_vocab[i])
+            if freq_dist_vocab[i][1]>=5:
+                vocab_acc.append(freq_dist_vocab[i][0])
             else:
-                return result
-        for text in collection_of_texts:
-            freq_dist_collection.append(FreqDist(text))
-        tdif_acc={}
-        for text in collection_of_texts:
-            freq_dist_text=FreqDist(text)
-            
-            for word in freq_dist_text.most_common(1000):
-                TF=word[1]/len(text)
-
-                number_docs_with_word=docs_with_word(word[1],collection_of_texts)
-
-                IDF=np.log(total_docs/number_docs_with_word)
-
-                tdif_acc[word[0]]=TF*IDF
-        tdif_acc=sorted(tdif_acc.items(),key=lambda x:x[1],reverse=True)
-        print(tdif_acc)
-        tdif_acc=[x[0] for x in tdif_acc]
+                break
+        self.vocabulary=vocab_acc
+        # self.vocabulary=[i[0] for i in freq_dist_vocab.most_common(vocab_length)]
         
-
-        self.vocabulary= tdif_acc[:n]
+    
 
 
     #once a vocabulary has been established, this function recreates the dataframe
@@ -129,16 +139,9 @@ class Preprocessor(object):
         new_df['x']=self.data[text_column]
         
         for j in range(len(self.vocabulary)):
-            new_df['x'+str(j+1)]=[None]*len(new_df)
-            for i in range(len(new_df['x'])):
-                
-                count=0
-                for word in new_df['x'][i]:
+            word=self.vocabulary[j]
 
-                    if word==self.vocabulary[j]:
-                        count+=1
-
-                new_df['x'+str(j+1)][i]=count
+            new_df['x'+str(j+1)]=new_df['x'].apply((lambda x: x.count(word)))
         def make_binary(entry):
             if entry=='positive':
                 return 1
@@ -148,53 +151,96 @@ class Preprocessor(object):
         self.data=new_df
         #new_df.to_csv('output.csv')
 
-    def plot_confusion(self):
-        print(self.data['y'])
-        print(self.data['like'])
+    def get_TFIDF(self,word,word_count,text,collection_of_texts,number_docs_with_word):
+    
+        TF=word_count/len(text)
+        total_docs=len(collection_of_texts)
+
+        IDF=np.log(total_docs/number_docs_with_word)
+        TFIDF=TF*IDF
+        return TFIDF
+    def update_dataframe_tfidf(self,text_column,y_column):
+        new_df=pd.DataFrame()
+        new_df['x']=self.data[text_column]
+        def docs_with_word(word,collection_of_texts):
+            result=0
+            for text in collection_of_texts:
+                if word in text:
+                    result+=1
+            if result==0:
+                return 1
+            else:
+                return result
+        
+        for j in range(len(self.vocabulary)):
+            word=self.vocabulary[j]
+            number_docs_with_word=docs_with_word(word,new_df['x'])
+
+            new_df['x'+str(j+1)]=new_df['x'].apply(lambda x: self.get_TFIDF(word,x.count(word),x,new_df['x'],number_docs_with_word))*100
+        def make_binary(entry):
+            if entry=='positive':
+                return 1
+            else:
+                return 0
+        new_df['y']=self.data[y_column].apply(make_binary)
+        self.data=new_df
+        new_df.to_csv('output.csv')
 
 def make_binary(entry):
     if entry=='positive':
         return 1
     else:
         return 0
-def run_experiment(train,test,output_path='C:\\Users\\pabou\\Documents\\GitHub\\CPS803-Machine_Learning\\thumbs_up\\results\\',output_prefix='output',vocab_type='normal',analysis=True):
+def run_experiment(train,test,output_path=os.path.normpath(os.getcwd()+"\\results\\"),output_prefix='output',vocab_type='normal',metric='tf',analysis=True):
     train_df=pd.read_csv(train,names=['x','y'])
+    t=time()
+    print("----------------------------")
+    print("CONDUCTING EXPERIMENT")
+    print("Vocabulary: %s\tMetric: %s\tAnalysis: %s" %(vocab_type,metric,analysis))
     preprocessor=Preprocessor(train_df)
-    preprocessor.tokenize('x')
-    preprocessor.add_tags('x')
-    preprocessor.lemmatize('x')
+    preprocessor.preprocess('x')
+
+    duration =time()-t
+    print("Time to preprocess: %f" %(duration))
+    print("CREATING VOCABULARY")
+    t=time()
     if vocab_type=='normal':
         preprocessor.create_vocabulary('x',15)
     elif vocab_type=='global':
-        preprocessor.create_vocabulary2('x',len(train_df)*5)
-    elif vocab_type=='tfidf':
-        preprocessor.tfidf(len(train_df)*5)
-    preprocessor.update_dataframe('x','y')
-
+        preprocessor.create_vocabulary2('x')
+    if metric=='tf':
+        preprocessor.update_dataframe('x','y')
+    elif metric=='tfidf':
+        preprocessor.update_dataframe_tfidf('x','y')
+    duration =time()-t
+    print("Time to create vocab and update counts: %f" %(duration))
+    t=time()
     model=BayesModel(preprocessor.vocabulary)
+    print("FITTING MODEL")
     model.fit_laplace(preprocessor.data)
-
+    duration =time()-t
+    print("Time to fit model: %f" %(duration))
+    print("PREDICTING")
+    t=time()
+    
     if analysis:
-        analyzer=model_analyzer.Analyzer(model, test)
+        analyzer=model_analyzer.Analyzer(model, test, metric)
         thresholds=[round((0.05*x),2) for x in range(20,-1,-1)]
         analyzer.threshold_scan(thresholds,output_path+output_prefix+'_threshold_scan.csv')
         analyzer.print_prob_distribution(output_path+output_prefix+'_prob_distribution.png')
         analyzer.print_confusion_matrix(threshold=0.5, output_path=output_path+output_prefix+'__confusion_matrix.png')
+    else:
+        analyzer=model_analyzer.Analyzer(model, test, metric)
+        
+    duration =time()-t
+    print("Time to predict and output analysis: %f" %(duration))
 
 def main(train_path,test_path):
-    print("RUNNING NORMAL")
-    run_experiment(train_path,test_path,output_prefix='normal')
-    print("RUNNING GLOBAL")
-    run_experiment(train_path,test_path,output_prefix='global',vocab_type='global')
-    run_experiment(train_path,test_path,output_prefix='tfidf',vocab_type='tfidf')
 
-    
+    run_experiment(train_path,test_path,output_prefix='tf',vocab_type='global',analysis=True)
+    run_experiment(train_path,test_path,output_prefix='tfidf',vocab_type='global',analysis=True,metric='tfidf')
 
-
-    
-
-    
 
 if __name__=='__main__':
-    main('train_small.csv','test.csv')
+    main('train.csv','test.csv')
     
