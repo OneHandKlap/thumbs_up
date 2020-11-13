@@ -1,7 +1,8 @@
 import pandas as pd
 import numpy as np
-import model_analyzer
-from bayes_model import BayesModel
+import model_analyzer 
+import logistic_model as lm
+import bayes_model as bm
 import matplotlib.pyplot as plt
 import nltk
 from nltk import TextCollection
@@ -15,6 +16,7 @@ import string
 from sklearn.metrics import confusion_matrix
 import os
 from time import time
+
 
 
 #purpose of this module is to make it straightforward and simple to conduct preprocessing for NLP projects
@@ -149,7 +151,7 @@ class Preprocessor(object):
                 return 0
         new_df['y']=self.data[y_column].apply(make_binary)
         self.data=new_df
-        #new_df.to_csv('output.csv')
+
 
     def get_TFIDF(self,word,word_count,text,collection_of_texts,number_docs_with_word):
     
@@ -184,7 +186,6 @@ class Preprocessor(object):
                 return 0
         new_df['y']=self.data[y_column].apply(make_binary)
         self.data=new_df
-        new_df.to_csv('output.csv')
 
 def make_binary(entry):
     if entry=='positive':
@@ -193,6 +194,7 @@ def make_binary(entry):
         return 0
 def run_experiment(train,test,output_path=os.path.normpath(os.getcwd()+"\\results\\"),output_prefix='output',vocab_type='normal',metric='tf',analysis=True):
     train_df=pd.read_csv(train,names=['x','y'])
+    print(output_path)
     t=time()
     print("----------------------------")
     print("CONDUCTING EXPERIMENT")
@@ -215,7 +217,7 @@ def run_experiment(train,test,output_path=os.path.normpath(os.getcwd()+"\\result
     duration =time()-t
     print("Time to create vocab and update counts: %f" %(duration))
     t=time()
-    model=BayesModel(preprocessor.vocabulary)
+    model=bm.BayesModel(preprocessor.vocabulary)
     print("FITTING MODEL")
     model.fit_laplace(preprocessor.data)
     duration =time()-t
@@ -226,9 +228,9 @@ def run_experiment(train,test,output_path=os.path.normpath(os.getcwd()+"\\result
     if analysis:
         analyzer=model_analyzer.Analyzer(model, test, metric)
         thresholds=[round((0.05*x),2) for x in range(20,-1,-1)]
-        analyzer.threshold_scan(thresholds,output_path+output_prefix+'_threshold_scan.csv')
-        analyzer.print_prob_distribution(output_path+output_prefix+'_prob_distribution.png')
-        analyzer.print_confusion_matrix(threshold=0.5, output_path=output_path+output_prefix+'__confusion_matrix.png')
+        analyzer.threshold_scan(thresholds,output_path+"\\"+output_prefix+'_threshold_scan.csv')
+        analyzer.print_prob_distribution(output_path+"\\"+output_prefix+'_prob_distribution.png')
+        analyzer.print_confusion_matrix(threshold=0.5, output_path=output_path+"\\"+output_prefix+'__confusion_matrix.png')
     else:
         analyzer=model_analyzer.Analyzer(model, test, metric)
         
@@ -236,9 +238,20 @@ def run_experiment(train,test,output_path=os.path.normpath(os.getcwd()+"\\result
     print("Time to predict and output analysis: %f" %(duration))
 
 def main(train_path,test_path):
-
-    run_experiment(train_path,test_path,output_prefix='tf',vocab_type='global',analysis=True)
-    run_experiment(train_path,test_path,output_prefix='tfidf',vocab_type='global',analysis=True,metric='tfidf')
+    
+    # train_df=pd.read_csv(train_path,names=['x','y'])
+    # t=time()
+    # preprocessor=Preprocessor(train_df)
+    # preprocessor.preprocess('x')
+    # preprocessor.create_vocabulary2('x')
+    # preprocessor.update_dataframe('x','y')
+    # model=lm.LogisticModel(preprocessor.vocabulary)
+    # model.fit_batch_GA(preprocessor.data)
+    
+    
+    # analyzer=model_analyzer.Analyzer(model,test_path)
+    run_experiment(train_path,test_path,output_prefix='_tf',vocab_type='global',analysis=True,metric='tf')
+    run_experiment(train_path,test_path,output_prefix='_tfidf',vocab_type='global',analysis=True,metric='tfidf')
 
 
 if __name__=='__main__':

@@ -36,7 +36,6 @@ class BayesModel(object):
         
 
     def predict(self,test_df):
-        
 
         def predict_row(row):
             
