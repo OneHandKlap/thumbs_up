@@ -8,26 +8,36 @@ import preprocessor
 
 class Analyzer(object):
 
-    def __init__(self,model,test_path,metric='tf'):
+    def __init__(self,model,test_df,prep=False,metric='tf'):
         self.model=model
-        self.test_path=test_path
+        self.test_path=test_df
         self.scan=None
+        self.preprocessed=prep
         self.test_data = self.make_dataframe(metric)
         self.metric=metric
 
 
-    def make_dataframe(self,metric):
-        test_df=pd.read_csv(self.test_path,names=['x','y'])
 
-        test_data=preprocessor.Preprocessor(test_df,self.model.vocab)
-        test_data.preprocess('x')
+    def make_dataframe(self,metric):
+
+        test_data=preprocessor.Preprocessor(self.test_path)
+        test_data.vocabulary=self.model.vocab
+
+        if self.preprocessed == False:
+            test_data.preprocess('x')
         
         if metric =='tf':
             test_data.update_dataframe('x','y')
         elif metric =='tfidf':
             test_data.update_dataframe_tfidf('x','y')
 
-        test_data.data['result']=self.model.predict(test_data.data)
+        
+        prediction=self.model.predict(test_data.data)
+        test_data.data['result']=pd.Series(prediction)>self.model.threshold
+
+
+        
+        # test_data.data.to_csv('output.csv')
 
         #test_data.data['over_50']=test_data.data['result']>0.5
         return test_data.data
@@ -136,3 +146,6 @@ class Analyzer(object):
             plt.savefig(output_path)
         else:
             plt.show()
+
+
+            

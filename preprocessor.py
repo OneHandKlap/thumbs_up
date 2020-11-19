@@ -16,6 +16,9 @@ import string
 from sklearn.metrics import confusion_matrix
 import os
 from time import time
+import svm_model as sm
+import warnings
+warnings.filterwarnings("ignore")
 
 
 
@@ -67,6 +70,7 @@ class Preprocessor(object):
         lemmatizer=WordNetLemmatizer()
         output=[]
 
+
         for word, tag in tokens:
             word = re.sub('http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+#]|[!*\(\),]|'\
                         '(?:%[0-9a-fA-F][0-9a-fA-F]))+','', word)
@@ -80,20 +84,27 @@ class Preprocessor(object):
                 pos='a'
             if word.lower() not in stop_words and word not in string.punctuation:
                 output.append(lemmatizer.lemmatize(word.lower(),pos))
+
         return output
 
 
     def preprocess(self,column):
         tokenizer = RegexpTokenizer('\w+')
         acc=[]
-        for x in range(len(self.data[column])):
+        count=0
+
+        for text in self.data[column]:
             
-            x=tokenizer.tokenize(self.data[column][x])
+            x=tokenizer.tokenize(text)
             x=list(pos_tag(x))
             
             x=self.lemmatize_tokens(x)
             acc.append(x)
-        self.data[column]=pd.Series(acc)
+            count+=1
+        acc=pd.Series(acc)
+
+        self.data[column]=acc
+
 
 
 
@@ -101,6 +112,7 @@ class Preprocessor(object):
     def create_vocabulary(self, column, num_words_per_text):
         vocabulary=[]
         for lemmatized_text in self.data[column]:
+
             freq_dist=FreqDist(lemmatized_text)
             count=0
             for word,times in freq_dist.most_common(50):
@@ -111,7 +123,6 @@ class Preprocessor(object):
                     count+=1
         self.vocabulary= vocabulary
 
-    ##TODO CREATE NEW VOCAB FUNCTION##
 
     def create_vocabulary2(self,column):
         vocabulary=[]
@@ -192,8 +203,9 @@ def make_binary(entry):
         return 1
     else:
         return 0
-def run_experiment(train,test,output_path=os.path.normpath(os.getcwd()+"\\results\\"),output_prefix='output',vocab_type='normal',metric='tf',analysis=True):
+def run_experiment(train,test,model_type='bayes',output_path=os.path.normpath(os.getcwd()+"\\results\\"),output_prefix='output',vocab_type='normal',metric='tf',analysis=True):
     train_df=pd.read_csv(train,names=['x','y'])
+    test_df=pd.read_csv(test,names=['x','y'])
     print(output_path)
     t=time()
     print("----------------------------")
@@ -217,9 +229,14 @@ def run_experiment(train,test,output_path=os.path.normpath(os.getcwd()+"\\result
     duration =time()-t
     print("Time to create vocab and update counts: %f" %(duration))
     t=time()
-    model=bm.BayesModel(preprocessor.vocabulary)
+    if model_type=='bayes':
+        model=bm.BayesModel(preprocessor.vocabulary)
+    elif model_type=='logistic':
+        model=lm.LogisticModel(preprocessor.vocabulary)
+    elif model_type=='svm':
+        model=sm.SVM(preprocessor.vocabulary)
     print("FITTING MODEL")
-    model.fit_laplace(preprocessor.data)
+    model.fit(preprocessor.data)
     duration =time()-t
     print("Time to fit model: %f" %(duration))
     print("PREDICTING")
@@ -227,6 +244,7 @@ def run_experiment(train,test,output_path=os.path.normpath(os.getcwd()+"\\result
     
     if analysis:
         analyzer=model_analyzer.Analyzer(model, test, metric)
+
         thresholds=[round((0.05*x),2) for x in range(20,-1,-1)]
         analyzer.threshold_scan(thresholds,output_path+"\\"+output_prefix+'_threshold_scan.csv')
         analyzer.print_prob_distribution(output_path+"\\"+output_prefix+'_prob_distribution.png')
@@ -237,23 +255,148 @@ def run_experiment(train,test,output_path=os.path.normpath(os.getcwd()+"\\result
     duration =time()-t
     print("Time to predict and output analysis: %f" %(duration))
 
-def main(train_path,test_path):
+# def k_fold(model_type,valid_df,k):
+#     preprocessor=Preprocessor(valid_df)
+#     preprocessor.preprocess('x')
+#     scores=[]
+#     folds=[]
+#     for i in range(k):
+#         temp=[int((len(valid_df)/k))*i,int((len(valid_df)/k))*(i+1)]
+#         folds.append(temp)
+#     print(folds)
+#     for k in folds:
+#         test_df=valid_df.iloc[k[0]:k[1]]
+#         train_df=valid_df.drop(valid_df.index[k[0]:k[1]])
+#         if model_type=='bayes':
+#             model=bm.BayesModel()
+#         elif model_type='logistic':
+#             model=lm.LogisticModel()
+#         model.fit(train_df)
+
+def k_fold(train,k, model_type='bayes',output_path=os.path.normpath(os.getcwd()+"\\results\\"),output_prefix='output',vocab_type='normal',metric='tf',analysis=True):
+    train_df=pd.read_csv(train,names=['x','y'])
+    scores=[]
+    folds=[]
+    for i in range(k):
+        temp=[int((len(train_df)/k))*i,int((len(train_df)/k))*(i+1)]
+        folds.append(temp)
+    train_original=train_df
+
+    for k in folds:
+        temp=train_original.copy()
+        test_df=temp.iloc[k[0]:k[1]]
+        
+        train_df=temp.drop(train_df.index[k[0]:k[1]])
+        train_df.reset_index(inplace=True)
+        test_df.reset_index(inplace=True)
+        
+
+
+        preprocessor=Preprocessor(train_df)
+
+        preprocessor.preprocess('x')
+
+
+        if vocab_type=='normal':
+            preprocessor.create_vocabulary('x',15)
+        elif vocab_type=='global':
+            preprocessor.create_vocabulary2('x')
+
+        if metric=='tf':
+            preprocessor.update_dataframe('x','y')
+        elif metric=='tfidf':
+            preprocessor.update_dataframe_tfidf('x','y')
+
+
+        if model_type=='bayes':
+            model=bm.BayesModel(preprocessor.vocabulary)
+        elif model_type=='logistic':
+            model=lm.LogisticModel(preprocessor.vocabulary)
+        elif model_type=='svm':
+            model=sm.SVM(preprocessor.vocabulary)
+        model.fit(preprocessor.data)
+        print("FITTING MODEL")
+
+        
+
+        analyzer=model_analyzer.Analyzer(model,test_df)
+
+
+        scores.append(1-(sum(analyzer.test_data['result']==analyzer.test_data['y'])/len(analyzer.test_data)))
+
+    return np.mean(scores)
+
+def error_graph(train_path,test_path, model_type='bayes',output_path=os.path.normpath(os.getcwd()+"\\results\\"),output_prefix='output',vocab_type='normal',metric='tf',analysis=True):
+    train_df=pd.read_csv(train_path,names=['x','y'])
+    test=pd.read_csv(test_path,names=['x','y'])
+    scores=[]
+    n_examples=[]
+    for i in range(1,100):
+        temp=train_df.copy()
+        temp_df=temp.iloc[:int((len(train_df)/100))*i]
+        test_df=test.copy()
+        n_examples.append((len(train_df)/100)*i)
+        
+        preprocessor=Preprocessor(temp_df)
+
+        preprocessor.preprocess('x')
+
+
+        if vocab_type=='normal':
+            preprocessor.create_vocabulary('x',15)
+        elif vocab_type=='global':
+            preprocessor.create_vocabulary2('x')
+
+        if metric=='tf':
+            preprocessor.update_dataframe('x','y')
+        elif metric=='tfidf':
+            preprocessor.update_dataframe_tfidf('x','y')
+
+
+        if model_type=='bayes':
+            model=bm.BayesModel(preprocessor.vocabulary)
+        elif model_type=='logistic':
+            model=lm.LogisticModel(preprocessor.vocabulary)
+        elif model_type=='svm':
+            model=sm.SVM(preprocessor.vocabulary)
+        model.fit(preprocessor.data)
+        print("FITTING MODEL")
+
+        
+        if (i > 1):
+            analyzer=model_analyzer.Analyzer(model,test_df)
+        else:
+            analyzer=model_analyzer.Analyzer(model,test_df,prep=True)
+        scores.append(((sum(analyzer.test_data['result']==analyzer.test_data['y'])/len(analyzer.test_data))))
     
-    # train_df=pd.read_csv(train_path,names=['x','y'])
-    # t=time()
-    # preprocessor=Preprocessor(train_df)
-    # preprocessor.preprocess('x')
-    # preprocessor.create_vocabulary2('x')
-    # preprocessor.update_dataframe('x','y')
-    # model=lm.LogisticModel(preprocessor.vocabulary)
-    # model.fit_batch_GA(preprocessor.data)
+    plt.plot(n_examples,scores)
+    plt.savefig(model_type+'_accuracy_graph.png')
     
+
+        
+
+def main(train_path, valid_path, test_path):
     
-    # analyzer=model_analyzer.Analyzer(model,test_path)
-    run_experiment(train_path,test_path,output_prefix='_tf',vocab_type='global',analysis=True,metric='tf')
-    run_experiment(train_path,test_path,output_prefix='_tfidf',vocab_type='global',analysis=True,metric='tfidf')
+    # run_experiment(train_path,test_path,model_type='logistic',output_prefix='svm_tf',vocab_type='global',analysis=True,metric='tfidf')
+    #error_graph(train_path,test_path,model_type='logistic')
+
+    models=['bayes','logistic','svm']
+    metrics=['tf','tfidf']
+    labels=[]
+    model_scores=[]
+    for model in models:
+        for metric in metrics:
+            print("********PERFORMING KFOLD ON: "+str(model)+'-'+metric)
+            model_scores.append(k_fold(valid_path,10,model_type=model,metric=metric))
+            labels.append(model+'-'+metric)
+    plt.bar([x for x in range(len(model_scores))],model_scores)
+    plt.xticks([x for x in range(len(model_scores))],labels)
+    plt.ylabel('error_rate')
+    plt.xlabel('model/metric_config')
+    plt.savefig('kfold_validation.png')
+
 
 
 if __name__=='__main__':
-    main('train.csv','test.csv')
+    main('large.csv','valid.csv','test_small.csv')
     

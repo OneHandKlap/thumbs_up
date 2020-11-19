@@ -4,15 +4,16 @@ import numpy as np
 
 class BayesModel(object):
 
-    def __init__(self,vocabulary,thetas=None):
+    def __init__(self,vocabulary,threshold=0.5,thetas=None):
         self.vocab=vocabulary
+        self.threshold=threshold
         if thetas==None:
             self.theta=[[],[]]
         else:
             self.theta=thetas
 
 
-    def fit_laplace(self,train_df):
+    def fit(self,train_df):
         total_positives=sum(train_df['y']==1)+len(self.vocab)
         total_negatives=sum(train_df['y']==0)+len(self.vocab)
         for col in (train_df.columns):
@@ -24,20 +25,12 @@ class BayesModel(object):
                 self.theta[0].append(probability_word_pos)
                 self.theta[1].append(probability_word_neg)
 
-
-    def fit(self,train_df):
-
-        total_positives=sum(train_df['y']==1)
-        for col in (train_df.columns):
-            if col not in ['x','y']:
-                count_word=sum(train_df[col].loc[train_df['y']==1])
-                probability_word=count_word/total_positives
-                self.theta.append(probability_word)
         
 
     def predict(self,test_df):
 
         def predict_row(row):
+
             
             this_row=row.iloc[1:-1]
             this_row.index=[x for x in range(len(this_row))]
@@ -46,7 +39,10 @@ class BayesModel(object):
 
             if pos==0:
                 return 0
-            return pos/(pos+neg)
+            if (pos/(pos+neg))>self.threshold:
+                return 1
+            else:
+                return 0
 
         return test_df.apply(predict_row,axis=1)
 

@@ -3,43 +3,86 @@ import numpy as np
 
 class LogisticModel(object):
 
-    def __init__(self,vocabulary,alpha=0.00005,max_iter=1000,thetas=None):
+    def __init__(self,vocabulary,alpha=1e-4,max_iter=10000,thetas=None,verbose=False, threshold=0.5):
         self.vocab=vocabulary
         if thetas==None:
             self.theta=np.array([1]*len(vocabulary))
 
         self.alpha=alpha
         self.max_iterations=max_iter
+        self.verbose=verbose
+        self.threshold=threshold
 
-    def fit_batch_GA(self,train_df):
-        # y=np.array(train_df['y'])
-        # xs=np.array(train_df.iloc[:,1:-1])
-        # delta = self.alpha*np.dot(np.exp(np.dot(self.theta.T,xs.T)),xs)
-        # self.theta=np.add.reduce([self.theta,delta])
-        theta_acc=[]
-        for count in range(10):
-            print(count)
-            for i in range(len(train_df)):
-                this_row_xs=np.array(train_df.iloc[i].iloc[1:-1])
-                prediction=np.matmul(self.theta[this_row_xs.nonzero()],this_row_xs
-                [this_row_xs.nonzero()])
-                sigmoid_prediction=1/(1+np.exp(-prediction))
-                delta=(train_df['y'][i]-sigmoid_prediction)
-                delta2=delta*this_row_xs[this_row_xs.nonzero()]
-                
-                self.theta[this_row_xs.nonzero()]=self.theta[this_row_xs.nonzero()]+self.alpha*delta2
-        print(self.theta)
-        
-
-    def predict(self,test_df):
-        print(self.theta)
-        pred=[]
-
-        for i in range(len(test_df)):
-            xs=np.array(test_df.iloc[i].iloc[1:-1])
+    def fit(self,train_df):
+        x=train_df.iloc[:,1:-1]
+        y=train_df['y']
+        count=0
+        while count < self.max_iterations:
+            prev_theta=np.copy(self.theta)
+            gradient=self._gradient(x,y)
             
-            pred.append(1/1+(np.exp(np.matmul(self.theta[xs.nonzero()],xs[xs.nonzero()]))))
-        return (pred)
+            self.theta=np.add(self.theta,self.alpha*(gradient))
+
+            loss = self._loss(x, y)
+            if self.verbose:
+                print('[iter: {:02d}, loss: {:.7f}]'.format(count, loss))
+
+            if np.linalg.norm(prev_theta - self.theta) < self.alpha:
+                break
+            count+=1
 
 
-    
+    def predict(self, test_df):
+        """Return predicted probabilities given new inputs x.
+
+        Args:
+            x: Inputs of shape (n_examples, dim).
+
+        Returns:
+            Outputs of shape (n_examples,).
+        """
+        x=test_df.iloc[:,1:-1]
+        
+        y_hat = self._sigmoid(x.dot(self.theta))
+        return y_hat
+
+    def _gradient(self, x, y):
+        """Get gradient of J.
+
+        Returns:
+            grad: The gradient of J with respect to theta. Same shape as theta.
+        """
+        m, _ = x.shape
+
+        probs = self._sigmoid(x.dot(self.theta))
+
+        grad =x.T.dot(y-probs)
+
+        return grad
+
+    def _hessian(self, x):
+        """Get the Hessian of J given theta and x.
+
+        Returns:
+            hess: The Hessian of J. Shape (dim, dim), where dim is dimension of theta.
+        """
+        m, _ = x.shape
+
+        probs = self._sigmoid(x.dot(self.theta))
+        diag = np.diag(probs * (1. - probs))
+        hess = 1 / m * x.T.dot(diag).dot(x)
+
+        return hess
+
+    def _loss(self, x, y):
+        """Get the empirical loss for logistic regression."""
+        hx = self._sigmoid(x.dot(self.theta))
+        loss = -np.mean(y * np.log(hx + self.alpha) + (1 - y) * np.log(1 - hx + self.alpha))
+
+        return loss
+
+    @staticmethod
+    def _sigmoid(x):
+        return 1 / (1 + np.exp(-x))
+
+
