@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import model_analyzer
 from bayes_model import BayesModel
+from logistic_regression import LogisticRegression
 import matplotlib.pyplot as plt
 import nltk
 from nltk import TextCollection
