@@ -1,20 +1,23 @@
 import pandas as pd
 import numpy as np
+from wordcloud import WordCloud
+import matplotlib.pyplot as plt
 
 
 class BayesModel(object):
 
-    def __init__(self,vocabulary,thetas=None):
+    def __init__(self,vocabulary,threshold=0.5,thetas=None):
         self.vocab=vocabulary
+        self.threshold=threshold
         if thetas==None:
             self.theta=[[],[]]
         else:
             self.theta=thetas
 
 
-    def fit_laplace(self,train_df):
-        total_positives=sum(train_df['y']==1)+2
-        total_negatives=sum(train_df['y']==0)+2
+    def fit(self,train_df):
+        total_positives=sum(train_df['y']==1)+len(self.vocab)
+        total_negatives=sum(train_df['y']==0)+len(self.vocab)
         for col in (train_df.columns):
             if col not in ['x','y']:
                 count_word_pos=sum(train_df[col].loc[train_df['y']==1])+1
@@ -24,34 +27,39 @@ class BayesModel(object):
                 self.theta[0].append(probability_word_pos)
                 self.theta[1].append(probability_word_neg)
 
-    def fit(self,train_df):
-
-        total_positives=sum(train_df['y']==1)
-        for col in (train_df.columns):
-            if col not in ['x','y']:
-                count_word=sum(train_df[col].loc[train_df['y']==1])
-                probability_word=count_word/total_positives
-                self.theta.append(probability_word)
         
+
     def predict(self,test_df):
 
-        def total_probability(row):
-            theta_pos=pd.Series(self.theta[0])
-            theta_neg=pd.Series(self.theta[1])
-            row=pd.Series(row[1:-1])
-            row.index=[x for x in range(len(theta_pos))]
-            temp=pd.DataFrame()
-            temp['theta_pos']=theta_pos
-            temp['theta_neg']=theta_neg
-            temp['row']=row
-            pos_predict=np.prod(temp['theta_pos'].loc[temp['row']!=0]*temp['row'].loc[temp['row']!=0])
-            neg_predict=np.prod(temp['theta_neg'].loc[temp['row']!=0]*temp
-            ['row'].loc[temp['row']!=0])
-            likelihood_pos=round(pos_predict/(pos_predict+neg_predict),2)
+        def predict_row(row):
 
-            return pos_predict, neg_predict, likelihood_pos
             
-        return zip(*test_df.apply(total_probability,axis=1))
+            this_row=row.iloc[1:-1]
+            this_row.index=[x for x in range(len(this_row))]
+            pos= np.prod(np.multiply(this_row.loc[this_row>0],pd.Series(self.theta[0]).iloc[this_row[this_row>0].index]))
+            neg=np.prod(np.multiply(this_row.loc[this_row>0],pd.Series(self.theta[1]).iloc[this_row[this_row>0].index]))
 
-    
+            if pos==0:
+                return 0
+            if (pos/(pos+neg))>self.threshold:
+                return 1
+            else:
+                return 0
+
+        return test_df.apply(predict_row,axis=1)
+
+    def get_word_cloud(self,sentiment):
+        
+        if sentiment=='pos':
+            features=dict(zip(self.vocab,self.theta[0]))
+            sorted_features = sorted(features.items(), key=lambda x: x[1], reverse=True)
+        else:
+            features=dict(zip(self.vocab,self.theta[1]))
+            sorted_features = sorted(features.items(), key=lambda x: x[1], reverse=True)
+        wordcloud= WordCloud().generate_from_frequencies(dict(sorted_features[:30]))
+        plt.figure(figsize=(8, 8), facecolor=None)
+        plt.imshow(wordcloud)
+        plt.axis("off")
+        plt.tight_layout(pad=0)
+        plt.show()
     

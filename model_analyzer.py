@@ -4,28 +4,42 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix
 import seaborn
 import preprocessor 
-import bayes_model
+
 
 class Analyzer(object):
 
-    def __init__(self,model,test_path):
+    def __init__(self,model,test_df,prep=False,metric='tf'):
         self.model=model
-        self.test_path=test_path
+        self.test_path=test_df
         self.scan=None
-        self.test_data = self.make_dataframe()
+        self.preprocessed=prep
+        self.test_data = self.make_dataframe(metric)
+        self.metric=metric
 
 
-    def make_dataframe(self):
-        test_df=pd.read_csv(self.test_path,names=['x','y'])
 
-        test_data=preprocessor.Preprocessor(test_df,self.model.vocab)
-        test_data.tokenize('x')
-        test_data.add_tags('x')
-        test_data.lemmatize('x')
+    def make_dataframe(self,metric):
 
-        test_data.update_dataframe('x','y')
+        test_data=preprocessor.Preprocessor(self.test_path)
+        test_data.vocabulary=self.model.vocab
 
-        test_data.data['pos_score'],test_data.data['neg_score'],test_data.data['likelihood_pos']=(self.model.predict(test_data.data))
+        if self.preprocessed == False:
+            test_data.preprocess('x')
+        
+        if metric =='tf':
+            test_data.update_dataframe('x','y')
+        elif metric =='tfidf':
+            test_data.update_dataframe_tfidf('x','y')
+
+        
+        prediction=self.model.predict(test_data.data)
+        test_data.data['result']=pd.Series(prediction)>self.model.threshold
+
+
+        
+        test_data.data.to_csv('output.csv')
+
+        #test_data.data['over_50']=test_data.data['result']>0.5
         return test_data.data
     def threshold_scan(self,thresholds,output_path):
         metrics=pd.DataFrame()
@@ -33,7 +47,7 @@ class Analyzer(object):
         
         def make_judgement(row,threshold):
             
-            if row['likelihood_pos']>threshold:
+            if row['result']>threshold:
                 return 1
             else:
                 return 0
@@ -87,7 +101,7 @@ class Analyzer(object):
 
         
         metrics.columns=['threshold','tp','tn','fp','fn','accuracy','precision','recall','specificity','harmonic_mean']
-        metrics.to_csv(output_path)
+        metrics.to_csv(output_path+".csv")
         self.threshold_scan=metrics
         return
 
@@ -95,8 +109,8 @@ class Analyzer(object):
 
 
         plt.figure()
-        os=self.test_data['likelihood_pos'].loc[self.test_data['y']==1]
-        xs=self.test_data['likelihood_pos'].loc[self.test_data['y']==0]
+        os=self.test_data['result'].loc[self.test_data['y']==1]
+        xs=self.test_data['result'].loc[self.test_data['y']==0]
         
         plt.plot([0 for x in range(len(os))],os,'go' ,linewidth=2,label="label==1")
         plt.plot([0 for x in range(len(xs))],xs, 'bx',linewidth=2,label="label==0")
@@ -107,7 +121,7 @@ class Analyzer(object):
             bottom=False,      # ticks along the bottom edge are off 
             labelbottom=False)
         plt.ylabel("Probability")
-        plt.title(output_path)
+        plt.title("Probability_Distribution_"+self.metric)
         plt.legend()
         if output_path is not None:
             plt.savefig(output_path)
@@ -117,8 +131,8 @@ class Analyzer(object):
     def print_confusion_matrix(self,threshold=0.5,output_path=None):
 
         #confusion matrix plot borrowed from "https://vitalflux.com/python-draw-confusion-matrix-matplotlib/"
-        print(self.test_data)
-        conf_matrix=confusion_matrix(self.test_data['y'],self.test_data['likelihood_pos'].apply(lambda x: x>=threshold))
+        
+        conf_matrix=confusion_matrix(self.test_data['y'],self.test_data['result'].apply(lambda x: x>=threshold))
         fig, ax = plt.subplots(figsize=(7.5, 7.5))
         ax.matshow(conf_matrix, cmap=plt.cm.Blues, alpha=0.3)
         for i in range(conf_matrix.shape[0]):
@@ -127,8 +141,12 @@ class Analyzer(object):
         
         plt.xlabel('Predictions', fontsize=18)
         plt.ylabel('Actuals', fontsize=18)
-        plt.title(output_path, fontsize=18)
+        plt.title("Confusion_Matrix_"+self.metric, fontsize=18)
         if output_path is not None:
             plt.savefig(output_path)
         else:
             plt.show()
+    
+
+
+            
