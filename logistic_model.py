@@ -3,7 +3,7 @@ import numpy as np
 
 class LogisticModel(object):
 
-    def __init__(self,vocabulary,alpha=1e-4,max_iter=10000,thetas=None,verbose=False, threshold=0.5):
+    def __init__(self,vocabulary,alpha=0.000035,eps=1e-5, max_iter=10000,thetas=None,verbose=False, threshold=0.5):
         self.vocab=vocabulary
         if thetas==None:
             self.theta=np.array([1]*len(vocabulary))
@@ -12,6 +12,7 @@ class LogisticModel(object):
         self.max_iterations=max_iter
         self.verbose=verbose
         self.threshold=threshold
+        self.eps=eps
 
     def fit(self,train_df):
         x=train_df.iloc[:,1:-1]
@@ -27,7 +28,7 @@ class LogisticModel(object):
             if self.verbose:
                 print('[iter: {:02d}, loss: {:.7f}]'.format(count, loss))
 
-            if np.linalg.norm(prev_theta - self.theta) < self.alpha:
+            if np.linalg.norm(prev_theta - self.theta) < self.eps:
                 break
             count+=1
 
@@ -59,20 +60,6 @@ class LogisticModel(object):
         grad =x.T.dot(y-probs)
 
         return grad
-
-    def _hessian(self, x):
-        """Get the Hessian of J given theta and x.
-
-        Returns:
-            hess: The Hessian of J. Shape (dim, dim), where dim is dimension of theta.
-        """
-        m, _ = x.shape
-
-        probs = self._sigmoid(x.dot(self.theta))
-        diag = np.diag(probs * (1. - probs))
-        hess = 1 / m * x.T.dot(diag).dot(x)
-
-        return hess
 
     def _loss(self, x, y):
         """Get the empirical loss for logistic regression."""

@@ -37,7 +37,7 @@ class Analyzer(object):
 
 
         
-        # test_data.data.to_csv('output.csv')
+        test_data.data.to_csv('output.csv')
 
         #test_data.data['over_50']=test_data.data['result']>0.5
         return test_data.data
@@ -146,6 +146,7 @@ class Analyzer(object):
             plt.savefig(output_path)
         else:
             plt.show()
+    
 
 
             

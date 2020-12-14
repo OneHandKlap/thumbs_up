@@ -1,5 +1,7 @@
 import pandas as pd
 import numpy as np
+from wordcloud import WordCloud
+import matplotlib.pyplot as plt
 
 
 class BayesModel(object):
@@ -46,7 +48,18 @@ class BayesModel(object):
 
         return test_df.apply(predict_row,axis=1)
 
-
-
-    
+    def get_word_cloud(self,sentiment):
+        
+        if sentiment=='pos':
+            features=dict(zip(self.vocab,self.theta[0]))
+            sorted_features = sorted(features.items(), key=lambda x: x[1], reverse=True)
+        else:
+            features=dict(zip(self.vocab,self.theta[1]))
+            sorted_features = sorted(features.items(), key=lambda x: x[1], reverse=True)
+        wordcloud= WordCloud().generate_from_frequencies(dict(sorted_features[:30]))
+        plt.figure(figsize=(8, 8), facecolor=None)
+        plt.imshow(wordcloud)
+        plt.axis("off")
+        plt.tight_layout(pad=0)
+        plt.show()
     

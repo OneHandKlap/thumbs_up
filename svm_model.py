@@ -8,10 +8,11 @@ class SVM(object):
             self.theta=np.array([1]*len(vocabulary))
         self.verbose=True
         self.SVM=None
+        self.threshold=threshold
     def fit(self, train_df):
         xs=train_df.iloc[:,1:-1]
         y=train_df['y']
-        self.SVM=svm.SVC()
+        self.SVM=svm.SVC(kernel='rbf')
         self.SVM.fit(xs,y)
 
     def predict(self,test_df):
